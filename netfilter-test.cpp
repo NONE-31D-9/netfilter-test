@@ -19,7 +19,7 @@ int protocol_parsing(struct nfq_data* tb, void* host_data) {
 	u_int8_t ip_offset = ip_hdr->ip_hl;
 
 	// if protocol is not tcp, then return func
-	if(ip_type != 6) return -1;
+	if(ip_type != 6) return NF_ACCEPT;
 
 	//if protocol is tcp, get tcp_hdr
 	struct tcphdr *tcp_hdr = (struct tcphdr*)(pkt_data+ip_offset*4);
@@ -49,19 +49,58 @@ int protocol_parsing(struct nfq_data* tb, void* host_data) {
 	printf("Src Port : %d\n", src_port);
 	printf("Dst Port : %d\n", dst_port);
 
-	// HTTP Parsing
-	return http_parsing(http_packet, http_len, host_data);
+
+	if (dst_port == 80 && http_len > 0)
+		// HTTP Parsing	
+		return http_parsing(http_packet, http_len, host_data);
+	else return NF_ACCEPT;
 }
 
 int http_parsing(unsigned char* pkt_data, int size, void* host_data){
-	printf("%s\n", host_data);
-	int i;
-	printf("*** HTTP *** \n");
-	for (i = 0; i < size; i++) {
-		if (i % 16 == 0)
-			printf("\n");
-		printf("%c ", pkt_data[i]);
-	}
+	// printf("%s\n", host_data);
 
+	printf("%d\n", size);
+	dump(pkt_data, size);
+
+	printf("*** HTTP *** \n");
+	char curr;
+    int idx = 0;
+    
+    // strstr func
+    // split by space. just find index of space. 
+    do {
+        curr = *(pkt_data+idx);
+        if(curr == 0x0D) break;
+        idx++;
+    } while(curr);
+
+    char get_str[idx+1];
+    strncpy(get_str, (char*)pkt_data, idx);
+    get_str[idx] = '\0';
+
+    u_char* host_start = pkt_data+idx+2;
+    idx = 0;
+    do {
+        curr = *(host_start + idx);
+        if(curr == 0x0D) break;
+        idx++;
+    } while(curr);
+
+    char host_str[idx+1];
+    strncpy(host_str, (char*)host_start, idx);
+    host_str[idx] = '\0';
+
+	printf("%s\n", get_str);
+	printf("%s\n", host_str);
+
+	char host_name[idx - 5];
+	strncpy(host_name, (char*)(host_str+6), idx-6);
+
+	printf("**HOST : %s \n", host_name);
+
+	if (strcmp((char*)host_data, host_name) == 0) {
+		printf("Detected Malicious Host\n");
+		return NF_DROP;
+	}
 	return NF_ACCEPT;
 }
